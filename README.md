@@ -1,62 +1,35 @@
 # react-native-music-control
 
-React Native Music Control is a module to enable remote controls and display "Now Playing" info on the lock screen and in the notification area on Android and iOS.
+React Native module to control remote controls on lockscreen + display Now playing Info on lockscreen (MPNowPlayingInfoCenter)
 
-Plays well with [React Native Sound](https://github.com/zmxv/react-native-sound).
+Play well with React [Native Sound](https://github.com/zmxv/react-native-sound)
 
-- - - -
+Mix between :
 
-- [Installation Process](#installation-process)
-	- [Linking on iOS](#linking-on-ios) 
-	- [Linking on Android](#linking-on-android) 
-	- [Troubleshooting](#troubleshooting) 
-- [Usage](#Usage)
-	- [Enable and Disable Controls](#enable-and-disable-controls)
-	- [Now Playing](#now-playing)
-	- [Update Playback](#update-playback)
-	- [Reset Now Playing](#reset-now-playing)
-	- [Stop Controls](#stop-controls)
-	- [Register to Events](#register-to-events)
-- [Important Notes](#important-notes)
-- [Customization](#customization)
-- [TODOs](#todos)
-- [Contributing](#contributing)
+* https://github.com/Muntligt/cordova-plugin-remotecommand (iOS)
+* https://github.com/Muntligt/cordova-plugin-nowplaying (iOS)
+* https://github.com/homerours/cordova-music-controls-plugin (Android)
+* https://github.com/shi11/RemoteControls/pull/32 (Android)
 
+Project using it :
 
-
-### Mix between: ###
-
-* [Cordova Plugin RemoteCommand](https://github.com/Muntligt/cordova-plugin-remotecommand) (iOS)
-* [Cordova Plugin NowPlaying](https://github.com/Muntligt/cordova-plugin-nowplaying) (iOS)
-* [Cordova Music Controls Plugin](https://github.com/homerours/cordova-music-controls-plugin) (Android)
-* [Remote Controls](https://github.com/shi11/RemoteControls/pull/32) (Android)
-
-### Project using this repo: ###
-
-* [https://github.com/just-team/react-native-youtube-player](https://github.com/just-team/react-native-youtube-player)
+* https://github.com/just-team/react-native-youtube-player
 
 ![iOS lockscreen](./docs/ios.png)
 
-- - - -
+# Install
 
-# Installation Process
-
-1. **Add it to your project**
+**Add it to your project**
 
 ```
 npm install react-native-music-control --save
 ```
 
-
-2. **Link it to your project**
-
-## Linking on iOS
+## iOS
 
 ### Automatic
 
-```
-react-native link
-```
+`react-native link`
 
 :warning: You must enable Audio Background mode in XCode project settings :
 
@@ -72,26 +45,16 @@ In the Project Navigator, select your project. Click the build target. Click Bui
 
 ### CocoaPods
 
-```
-pod 'react-native-music-control', :path => '../node_modules/react-native-music-control'
-```
+`pod 'react-native-music-control', :path => '../node_modules/react-native-music-control'`
 
 Run `pod install` in /ios folder.
 
-- - - -
 
-## Linking on Android
+## Android
 
 ### Automatic
 
-```
-react-native link
-```
-
-**Add following to your project AndroidManifest.xml**
-```
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-```
+`react-native link`
 
 ### Manual
 
@@ -133,20 +96,14 @@ public class MainApplication extends Application implements ReactApplication {
   }
 ```
 
-**Add following to your project AndroidManifest.xml**
-```
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-```
-- - - -
-
 ### Troubleshooting
-Some users reported this error while compiling the Android version:
+Some user reported this error while compiling the android version:
 
 ```
 Multiple dex files define Landroid/support/v4/accessibilityservice/AccessibilityServiceInfoCompat
 ```
 
-To solve this, issue just copy this line at the end of your application build.gradle
+to solve the issue just copy this line at the end of your application build.gradle
 
 **android/app/build.gradle**
 
@@ -163,15 +120,86 @@ To solve this, issue just copy this line at the end of your application build.gr
 +}
 ```
 
-- - - -
-
-# Usage
+# Use
 
 ```javascript
 import MusicControl from 'react-native-music-control';
 ```
 
-### Enable and Disable controls
+### Now Playing
+
+This method enables the music controls. To disable them, use `resetNowPlaying()`
+
+You should call this method after a sound is playing.
+
+For Android's rating system, remove the `rating` value for unrated tracks, use boolean for RATING_HEART or RATING_THUMBS_UP_DOWN and use a number for other types. Note: To use custom types, you have to define the type with `updatePlayback` before calling this function.
+
+```javascript
+MusicControl.setNowPlaying({
+  title: 'Billie Jean',
+  artwork: 'https://i.imgur.com/e1cpwdo.png', // URL or RN's image require()
+  artist: 'Michael Jackson',
+  album: 'Thriller',
+  genre: 'Post-disco, Rhythm and Blues, Funk, Dance-pop',
+  duration: 294, // (Seconds)
+  description: '', // Android Only
+  color: 0xFFFFFF, // Notification Color - Android Only
+  date: '1983-01-02T00:00:00Z', // Release Date (RFC 3339) - Android Only
+  rating: 84, // Android Only (Boolean or Number depending on the type)
+  notificationIcon: 'my_custom_icon' // Android Only (String), Android Drawable resource name for a custom notification icon
+})
+```
+
+### Playback
+
+You don't need to call this method filling all properties, but you should always fill `elapsedTime` for iOS support and better performance on Android.
+
+You also don't need to call this method repeatedly to update the `elapsedTime`, only call it when you need to update any other property
+
+```javascript
+MusicControl.updatePlayback({
+  state: MusicControl.STATE_PLAYING, // (STATE_ERROR, STATE_STOPPED, STATE_PLAYING, STATE_PAUSED, STATE_BUFFERING)
+  speed: 1, // Playback Rate
+  elapsedTime: 103, // (Seconds)
+  bufferedTime: 200, // Android Only (Seconds)
+  volume: 10, // Android Only (Number from 0 to maxVolume) - Only used when remoteVolume is enabled
+  maxVolume: 10, // Android Only (Number) - Only used when remoteVolume is enabled
+  rating: MusicControl.RATING_PERCENTAGE // Android Only (RATING_HEART, RATING_THUMBS_UP_DOWN, RATING_3_STARS, RATING_4_STARS, RATING_5_STARS, RATING_PERCENTAGE)
+})
+```
+
+**Examples**
+```javascript
+// Changes the state to paused
+MusicControl.updatePlayback({
+  state: MusicControl.STATE_PAUSED,
+  elapsedTime: 135
+})
+
+// Changes the volume
+MusicControl.updatePlayback({
+  volume: 9, // Android Only
+  elapsedTime: 167
+})
+```
+
+### Reset now playing
+
+Resets and hides the music controls
+
+```javascript
+MusicControl.resetNowPlaying()
+```
+
+### Stop controls
+
+Resets, hides the music controls and disables everything
+
+```javascript
+MusicControl.stopControl()
+```
+
+### Enable/disable controls
 
 **iOS**: Lockscreen
 
@@ -212,91 +240,18 @@ MusicControl.enableControl('skipBackward', true, {interval: 15}))
 MusicControl.enableControl('skipForward', true, {interval: 30}))
 ```
 
-- - - -
+Important Notes:
+* Android only supports the intervals 5, 10, & 30, while iOS supports any number
+* The interval value only changes what number displays in the UI, the actual logic to skip forward or backward by a given amount must be implemented in the appropriate callbacks
+* When using [react-native-sound](https://github.com/zmxv/react-native-sound) for audio playback, make sure that on iOS `mixWithOthers` is set to `false` in [`Sound.setCategory(value, mixWithOthers)`](https://github.com/zmxv/react-native-sound#soundsetcategoryvalue-mixwithothers-ios-only). MusicControl will not work on a real device when this is set to `true`.
+* For lockscreen controls to appear enabled instead of greyed out, the accompanying listener for each control that you want to display on the lock screen must contain a valid function:
 
-### Now Playing
-
-The `setNowPlaying` method enables the music controls. To disable them, use `resetNowPlaying()`.
-
-You should call this method after a sound is playing.
-
-For Android's rating system, remove the `rating` value for unrated tracks, use a boolean for RATING_HEART or RATING_THUMBS_UP_DOWN and use a number for other types.
-
-**Note**: To use custom types, you have to define the type with `updatePlayback` before calling this function.
-
-```javascript
-MusicControl.setNowPlaying({
-  title: 'Billie Jean',
-  artwork: 'https://i.imgur.com/e1cpwdo.png', // URL or RN's image require()
-  artist: 'Michael Jackson',
-  album: 'Thriller',
-  genre: 'Post-disco, Rhythm and Blues, Funk, Dance-pop',
-  duration: 294, // (Seconds)
-  description: '', // Android Only
-  color: 0xFFFFFF, // Notification Color - Android Only
-  date: '1983-01-02T00:00:00Z', // Release Date (RFC 3339) - Android Only
-  rating: 84, // Android Only (Boolean or Number depending on the type)
-  notificationIcon: 'my_custom_icon' // Android Only (String), Android Drawable resource name for a custom notification icon
+```
+MusicControl.on('play', () => {
+  // A valid funcion must be present
+  player.play()
 })
 ```
-
-- - - -
-
-### Update Playback
-
-You don't need to set all properties when calling the `updatePlayback` method, but you should always set `elapsedTime` for iOS support and better performance on Android.
-
-You don't need to call this method repeatedly to update the `elapsedTime` -- only call it when you need to update any other property.
-
-```javascript
-MusicControl.updatePlayback({
-  state: MusicControl.STATE_PLAYING, // (STATE_ERROR, STATE_STOPPED, STATE_PLAYING, STATE_PAUSED, STATE_BUFFERING)
-  speed: 1, // Playback Rate
-  elapsedTime: 103, // (Seconds)
-  bufferedTime: 200, // Android Only (Seconds)
-  volume: 10, // Android Only (Number from 0 to maxVolume) - Only used when remoteVolume is enabled
-  maxVolume: 10, // Android Only (Number) - Only used when remoteVolume is enabled
-  rating: MusicControl.RATING_PERCENTAGE // Android Only (RATING_HEART, RATING_THUMBS_UP_DOWN, RATING_3_STARS, RATING_4_STARS, RATING_5_STARS, RATING_PERCENTAGE)
-})
-```
-
-*Examples*
-```javascript
-// Changes the state to paused
-MusicControl.updatePlayback({
-  state: MusicControl.STATE_PAUSED,
-  elapsedTime: 135
-})
-
-// Changes the volume
-MusicControl.updatePlayback({
-  volume: 9, // Android Only
-  elapsedTime: 167
-})
-```
-
-- - - -
-
-### Reset Now Playing
-
-Resets and hides the music controls.
-
-```javascript
-MusicControl.resetNowPlaying()
-```
-
-- - - -
-
-### Stop Controls
-
-Resets, hides the music controls and disables everything.
-
-```javascript
-MusicControl.stopControl()
-```
-
-- - - -
-
 
 There is also a `closeNotification` control on Android controls the swipe behavior of the audio playing notification, and accepts additional configuration options with the `when` key:
 
@@ -311,14 +266,13 @@ MusicControl.enableControl('closeNotification', true, {when: 'paused'})
 MusicControl.enableControl('closeNotification', true, {when: 'never'})
 ```
 
-### Register to Events
+### Register to events
 
 ```javascript
 componentDidMount() {
     MusicControl.enableBackgroundMode(true);
 
     // on iOS, pause playback during audio interruptions (incoming calls) and resume afterwards.
-    // As of {{ INSERT NEXT VERSION HERE}} works for android aswell.
     MusicControl.handleAudioInterruptions(true);
 
     MusicControl.on('play', ()=> {
@@ -369,35 +323,19 @@ componentDidMount() {
 }
 ```
 
-**Note**: Enabling both the 'play' and 'pause' controls will only show one icon -- either a play or a pause icon. The Music Control notification will switch which one is displayed based on the state set via the `updatePlayback` method. While the state is `MusicControl.STATE_PLAYING` it will show the pause icon, and while the state is `MusicControl.STATE_PAUSED` it will show the play icon.
+### Customization
 
-- - - -
-
-# Important Notes
-
-* Android only supports the intervals 5, 10, & 30, while iOS supports any number
-* The interval value only changes what number displays in the UI, the actual logic to skip forward or backward by a given amount must be implemented in the appropriate callbacks
-* When using [react-native-sound](https://github.com/zmxv/react-native-sound) for audio playback, make sure that on iOS `mixWithOthers` is set to `false` in [`Sound.setCategory(value, mixWithOthers)`](https://github.com/zmxv/react-native-sound#soundsetcategoryvalue-mixwithothers-ios-only). MusicControl will not work on a real device when this is set to `true`.
-* For lockscreen controls to appear enabled instead of greyed out, the accompanying listener for each control that you want to display on the lock screen must contain a valid function:
-
-```
-MusicControl.on('play', () => {
-  // A valid funcion must be present
-  player.play()
-})
-```
-
-- - - -
-
-# Customization
-
-It is possible to customize the icon used in the notification on Android. By default you can add a drawable resource to your package with the file name `music_control_icon` and the notification will use your custom icon. If you need to specify a custom icon name, or change your notification icon during runtime, the `setNowPlaying` function accepts a string for an Android drawable resource name in the `notificationIcon` prop. Keep in mind that just like with `music_control_icon` the resource specified has to be in the drawable package of your Android app.
+It is possible to customize the icon used in the notification on Android.
+By default you can add a drawable resource to your package with the file name `music_control_icon` and the notification will use your custom icon.
+If you need to specify a custom icon name, or change your notification icon during runtime, the `setNowPlaying` function accepts a string
+for an Android drawable resource name in the `notificationIcon` prop. Keep in mind that just like with `music_control_icon` the resource specified has
+to be in the drawable package of your Android app.
 
 ```javascript
   MusicControl.setCustomNotificationIcon('my_custom_icon');
 ```
 
-# TODOs
+# TODOS
 
 - [x] Android support
 - [ ] Test

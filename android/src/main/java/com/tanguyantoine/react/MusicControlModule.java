@@ -1,11 +1,14 @@
 package com.tanguyantoine.react;
 
+import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.NotificationChannel;
 import android.content.ComponentCallbacks2;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.Context;
+import android.content.res.Resources;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -14,19 +17,21 @@ import android.graphics.drawable.Drawable;
 import android.media.AudioManager;
 import android.os.SystemClock;
 import android.os.Build;
-import androidx.annotation.RequiresApi;
+import android.support.annotation.RequiresApi;
 import android.support.v4.media.MediaMetadataCompat;
 import android.support.v4.media.RatingCompat;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
-import androidx.core.app.NotificationCompat;
-import androidx.media.app.NotificationCompat.MediaStyle;
+import android.support.v4.app.NotificationCompat;
+import android.support.v4.content.ContextCompat;
+import android.support.v4.media.app.NotificationCompat.MediaStyle;
 import android.util.Log;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.ReadableType;
+import com.facebook.react.packagerconnection.NotificationOnlyHandler;
 import com.facebook.react.views.imagehelper.ResourceDrawableIdHelper;
 import java.io.IOException;
 import java.io.InputStream;
@@ -48,14 +53,11 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
     private PlaybackStateCompat.Builder pb;
     public NotificationCompat.Builder nb;
 
-
     private PlaybackStateCompat state;
 
     public MusicControlNotification notification;
-    private MusicControlVolumeListener volume;
+    private MusicControlListener.VolumeListener volume;
     private MusicControlReceiver receiver;
-    private MusicControlEventEmitter emitter;
-    private MusicControlAudioFocusListener afListener;
 
     private Thread artworkThread;
 
@@ -110,36 +112,6 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
         mNotificationManager.createNotificationChannel(mChannel);
     }
 
-    private boolean hasControl(long control) {
-        if((controls & control) == control) {
-            return true;
-        }
-        return false;
-    }
-
-    private void updateNotificationMediaStyle() {
-        if (!(Build.MANUFACTURER.toLowerCase(Locale.getDefault()).contains("huawei") && Build.VERSION.SDK_INT < Build.VERSION_CODES.M)) {
-            MediaStyle style = new MediaStyle();
-            style.setMediaSession(session.getSessionToken());
-            int controlCount = 0;
-            if(hasControl(PlaybackStateCompat.ACTION_PLAY) || hasControl(PlaybackStateCompat.ACTION_PAUSE) || hasControl(PlaybackStateCompat.ACTION_PLAY_PAUSE)) {
-                controlCount += 1;
-            }
-            if(hasControl(PlaybackStateCompat.ACTION_SKIP_TO_NEXT)) {
-                controlCount += 1;
-            }
-            if(hasControl(PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS)) {
-                controlCount += 1;
-            }
-            int[] actions = new int[controlCount];
-            for(int i=0; i<actions.length; i++) {
-                actions[i] = i;
-            }
-            style.setShowActionsInCompactView(actions);
-            nb.setStyle(style);
-        }
-    }
-
     public void init() {
         if (init) return;
 
@@ -147,15 +119,14 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
 
         context = getReactApplicationContext();
 
-        emitter = new MusicControlEventEmitter(context);
+        ComponentName compName = new ComponentName(context, MusicControlReceiver.class);
 
-        session = new MediaSessionCompat(context, "MusicControl");
+        session = new MediaSessionCompat(context, "MusicControl", compName, null);
         session.setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS |
                 MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS);
+        session.setCallback(new MusicControlListener(context));
 
-        session.setCallback(new MediaSessionCallback(emitter));
-
-        volume = new MusicControlVolumeListener(context, emitter, true, 100, 100);
+        volume = new MusicControlListener.VolumeListener(context, true, 100, 100);
         if(remoteVolume) {
             session.setPlaybackToRemote(volume);
         } else {
@@ -170,9 +141,10 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
             createChannel(context);
         }
         nb = new NotificationCompat.Builder(context, CHANNEL_ID);
-        nb.setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
 
-        updateNotificationMediaStyle();
+        if (!(Build.MANUFACTURER.toLowerCase(Locale.getDefault()).contains("huawei") && Build.VERSION.SDK_INT < Build.VERSION_CODES.M)) {
+            nb.setStyle(new MediaStyle().setMediaSession(session.getSessionToken()));
+        }
 
         state = pb.build();
 
@@ -189,8 +161,6 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
 
         Intent myIntent = new Intent(context, MusicControlNotification.NotificationService.class);
 
-        afListener = new MusicControlAudioFocusListener(context, emitter, volume);
-
         if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O){
             context.startForegroundService(myIntent);
 
@@ -205,7 +175,7 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
     }
 
     @ReactMethod
-    public synchronized void stopControl() {
+    public void stopControl() {
         if (!init)
             return;
 
@@ -244,15 +214,6 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
     }
 
     @ReactMethod
-    public void observeAudioInterruptions(boolean enable) {
-        if (enable) {
-            afListener.requestAudioFocus();
-        } else {
-            afListener.abandonAudioFocus();
-        }
-    }
-
-    @ReactMethod
     synchronized public void setNowPlaying(ReadableMap metadata) {
         init();
         if(artworkThread != null && artworkThread.isAlive()) artworkThread.interrupt();
@@ -266,13 +227,6 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
         long duration = metadata.hasKey("duration") ? (long)(metadata.getDouble("duration") * 1000) : 0;
         int notificationColor = metadata.hasKey("color") ? metadata.getInt("color") : NotificationCompat.COLOR_DEFAULT;
         String notificationIcon = metadata.hasKey("notificationIcon") ? metadata.getString("notificationIcon") : null;
-
-        // If a color is supplied, we need to clear the MediaStyle set during init().
-        // Otherwise, the color will not be used for the notification's background.
-        boolean removeFade = metadata.hasKey("color");
-        if(removeFade) {
-            nb.setStyle(new MediaStyle());
-        }
 
         RatingCompat rating;
         if(metadata.hasKey("rating")) {
@@ -288,6 +242,8 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
         } else {
             rating = RatingCompat.newUnratedRating(ratingType);
         }
+
+
 
         md.putText(MediaMetadataCompat.METADATA_KEY_TITLE, title);
         md.putText(MediaMetadataCompat.METADATA_KEY_ARTIST, artist);
@@ -458,13 +414,13 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
             case "closeNotification":
                 if(enable) {
                     if (options.hasKey("when")) {
-                        if ("always".equals(options.getString("when"))) {
-                            this.notificationClose = notificationClose.ALWAYS;
-                        }else if ("paused".equals(options.getString("when"))) {
-                            this.notificationClose = notificationClose.PAUSED;
-                        }else {
-                            this.notificationClose = notificationClose.NEVER;
-                        }
+                       if ("always".equals(options.getString("when"))) {
+                           this.notificationClose = notificationClose.ALWAYS;
+                       }else if ("paused".equals(options.getString("when"))) {
+                           this.notificationClose = notificationClose.PAUSED;
+                       }else {
+                           this.notificationClose = notificationClose.NEVER;
+                       }
                     }
                     return;
                 }
@@ -484,12 +440,6 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
 
         state = pb.build();
         session.setPlaybackState(state);
-
-        updateNotificationMediaStyle();
-
-        if(session.isActive()) {
-            notification.show(nb, isPlaying);
-        }
     }
 
     private Bitmap loadArtwork(String url, boolean local) {
@@ -498,6 +448,7 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
         try {
             // If we are running the app in debug mode, the "local" image will be served from htt://localhost:8080, so we need to check for this case and load those images from URL
             if(local && !url.startsWith("http")) {
+
                 // Gets the drawable from the RN's helper for local resources
                 ResourceDrawableIdHelper helper = ResourceDrawableIdHelper.getInstance();
                 Drawable image = helper.getResourceDrawable(getReactApplicationContext(), url);
@@ -507,13 +458,16 @@ public class MusicControlModule extends ReactContextBaseJavaModule implements Co
                 } else {
                     bitmap = BitmapFactory.decodeFile(url);
                 }
+
             } else {
+
                 // Open connection to the URL and decodes the image
                 URLConnection con = new URL(url).openConnection();
                 con.connect();
                 InputStream input = con.getInputStream();
                 bitmap = BitmapFactory.decodeStream(input);
                 input.close();
+
             }
         } catch(IOException ex) {
             Log.w(TAG, "Could not load the artwork", ex);
